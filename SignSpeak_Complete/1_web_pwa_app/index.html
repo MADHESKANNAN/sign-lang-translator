@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0a1030">
+<link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon-192.png">
+<title>SignSpeak</title>
+<style>
+:root{--bg:#0a1030;--card:#131b45;--tx:#f1ecff;--ac:#68ebff;--ok:#c55fff;--bad:#c1121f}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,'Noto Sans Tamil',sans-serif;background:var(--bg);color:var(--tx);padding-bottom:env(safe-area-inset-bottom)}
+header{display:flex;gap:8px;align-items:center;padding:10px 12px;padding-top:calc(10px + env(safe-area-inset-top));font-weight:700;font-size:20px}
+header span{flex:1}
+button,select,input{background:#232c63;color:var(--tx);border:0;border-radius:8px;padding:9px 12px;font-size:14px}
+button{cursor:pointer}button.p{background:var(--ac);color:#000;font-weight:600}button.d{background:var(--bad)}
+.wrap{max-width:900px;margin:auto;padding:0 12px 16px}
+.card{background:var(--card);border-radius:22px;padding:14px;margin-bottom:12px}
+.cam{position:relative;width:100%;aspect-ratio:4/3;background:#000;border-radius:10px;overflow:hidden}
+video,canvas{position:absolute;inset:0;width:100%;height:100%;transform:scaleX(-1);object-fit:cover}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;align-items:center}
+#now{font-size:26px;min-height:38px}#bar{height:6px;background:#232c63;border-radius:3px}#bar div{height:100%;width:0;background:var(--ac)}
+nav{display:flex;gap:6px;margin-bottom:12px}nav button{flex:1;padding:11px}nav button.on{background:var(--ac);color:#000;font-weight:700}
+textarea{width:100%;height:160px;border-radius:8px;border:0;padding:10px;font-size:18px;background:#0a1030;color:var(--tx)}
+.panel{display:none}.panel.on{display:block}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(125px,1fr));gap:8px}
+.sg{background:#0a1030;border-radius:8px;padding:8px;text-align:center;cursor:pointer;border:2px solid transparent;position:relative}
+.sg b{font-size:32px;display:block}.sg small{display:block;opacity:.75}.sg.done{border-color:var(--ok);background:#2a1a55}
+.sg i{position:absolute;top:2px;right:6px;font-size:11px;font-style:normal;opacity:.7}.sg .x{position:absolute;top:0;left:0;background:var(--bad);padding:2px 7px;font-size:12px}
+input{background:#0a1030;width:150px}input[type=range]{width:160px}
+</style></head><body>
+<header><img src="icon-192.png" width="36" height="36" style="border-radius:10px"><span style="color:var(--ac)">SignSpeak <small style="color:var(--ok);font-weight:400;font-size:13px">சைகை</small></span><button id="inst" hidden class="p">⬇ Install</button>
+<select id="lang"><option value="e">English</option><option value="t">தமிழ்</option></select></header>
+<div class="wrap">
+<div class="card">
+ <div class="cam"><video id="v" autoplay playsinline muted></video><canvas id="c"></canvas></div>
+ <div class="row"><button class="p" id="start">▶ Start Camera</button><button id="flip">🔄 Flip</button>
+  <label><input type="checkbox" id="face" checked style="width:auto"> Face</label>
+  <label><input type="checkbox" id="auto" checked style="width:auto"> Auto speak</label></div>
+ <div id="status">Tap "Start Camera" (first load 10-20 sec, then works offline).</div>
+ <div id="now"></div><div id="bar"><div></div></div>
+</div>
+<nav><button data-t="tr" class="on">📝 Translate</button><button data-t="te">➕ Teach</button><button data-t="li">📚 Library</button></nav>
+
+<div class="card panel on" id="tr">
+ <textarea id="note" placeholder="Recognized words appear here..."></textarea>
+ <div class="row"><button id="mic">🎤 Voice→Text</button><button id="speak">🔊 Speak</button><button id="undo">↩ Undo</button><button id="dot">.</button>
+ <button id="copy">Copy</button><button id="save">Save</button><button id="clear">Clear</button></div>
+ <small id="micst">Hold a sign for 1 second to type it.</small>
+</div>
+
+<div class="card panel" id="te">
+ <b>Add your own hand sign or face expression</b>
+ <div class="row"><select id="ty"><option value="hand">🖐️ Hand sign</option><option value="face">🙂 Face expression</option></select>
+  <input id="we" placeholder="English word"><input id="wt" placeholder="தமிழ் சொல்"><input id="em" placeholder="Emoji" style="width:70px"></div>
+ <div class="row"><button class="p" id="rec">⏺ Record (3s countdown + 2.5s)</button></div>
+ <div id="tst">Start camera first. Same name-ku again record panna accuracy increase aagum (different angle/light la).</div>
+</div>
+
+<div class="card panel" id="li">
+ <div class="row"><label>Sensitivity <input type="range" id="sens" min="0.6" max="2.4" step="0.1" value="1.2"></label>
+  <button id="exp">Export my signs</button><button id="imp">Import</button><input type="file" id="file" accept=".json" hidden></div>
+ <div class="grid" id="guide"></div>
+</div>
+</div>
+
+<script type="module">
+import {FilesetResolver,GestureRecognizer,FaceLandmarker,DrawingUtils} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+const $=id=>document.getElementById(id),sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const SIGNS={
+ Open_Palm:{e:'Hello',t:'வணக்கம்',i:'🖐️'},Thumb_Up:{e:'Good',t:'நல்லது',i:'👍'},Thumb_Down:{e:'Bad',t:'மோசம்',i:'👎'},
+ Victory:{e:'Peace',t:'அமைதி',i:'✌️'},ILoveYou:{e:'I love you',t:'நான் உன்னை நேசிக்கிறேன்',i:'🤟'},Closed_Fist:{e:'Yes',t:'ஆம்',i:'✊'},
+ Pointing_Up:{e:'Wait',t:'காத்திரு',i:'☝️'},OK:{e:'OK',t:'சரி',i:'👌'},Call:{e:'Call me',t:'எனக்கு அழை',i:'🤙'},Three:{e:'Three',t:'மூன்று',i:'3️⃣'},
+ Smile:{e:'Happy',t:'மகிழ்ச்சி',i:'😊'},Surprised:{e:'Surprised',t:'ஆச்சரியம்',i:'😮'},Sleepy:{e:'Sleepy',t:'தூக்கம்',i:'😴'}};
+const LS='signspeak_custom_v1';let custom=JSON.parse(localStorage.getItem(LS)||'[]');
+const persist=()=>localStorage.setItem(LS,JSON.stringify(custom));
+const get=k=>SIGNS[k]||custom.find(c=>'c_'+c.id===k);
+let lang='e',running=false,facing='user',cur={hand:null,face:null};
+$('lang').onchange=e=>{lang=e.target.value;draw()};
+// tabs
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('nav button,.panel').forEach(x=>x.classList.remove('on'));b.classList.add('on');$(b.dataset.t).classList.add('on')});
+// library
+function draw(){const g=$('guide');g.innerHTML='';
+ const add=(k,s,c)=>{const d=document.createElement('div');d.className='sg';d.id='g_'+k;d.innerHTML=`<b>${s.i}</b>${s.e}<small>${s.t}</small>${c?'<i>'+(c.type==='hand'?'✋ mine':'🙂 mine')+'</i><span class="x">✕</span>':''}`;
+  d.onclick=ev=>{if(ev.target.className==='x'){if(confirm('Delete '+s.e+'?')){custom=custom.filter(z=>z!==c);persist();draw()}return}say(s[lang])};g.appendChild(d)};
+ for(const k in SIGNS)add(k,SIGNS[k]);custom.forEach(c=>add('c_'+c.id,c,c))}
+draw();
+// speech
+function say(t){speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.lang=lang==='t'?'ta-IN':'en-US';speechSynthesis.speak(u)}
+const note=$('note');const add=t=>{note.value+=(note.value&&!/\s$/.test(note.value)?' ':'')+t;note.scrollTop=note.scrollHeight};
+$('speak').onclick=()=>say(note.value);$('undo').onclick=()=>note.value=note.value.trim().split(/\s+/).slice(0,-1).join(' ');
+$('dot').onclick=()=>note.value=note.value.trimEnd()+'. ';$('clear').onclick=()=>note.value='';$('copy').onclick=()=>navigator.clipboard.writeText(note.value);
+const dl=(name,txt,type)=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([txt],{type}));a.download=name;a.click()};
+$('save').onclick=()=>dl('notes.txt',note.value,'text/plain');
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec,lis=false;
+$('mic').onclick=()=>{if(!SR){$('micst').textContent='Voice typing not supported here. Use Chrome/Edge/Android Chrome.';return}
+ if(lis){rec.stop();return}rec=new SR();rec.lang=lang==='t'?'ta-IN':'en-US';rec.continuous=true;
+ rec.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)add(e.results[i][0].transcript.trim())};
+ rec.onend=()=>{lis=false;$('mic').textContent='🎤 Voice→Text'};rec.start();lis=true;$('mic').textContent='⏹ Stop'};
+// export / import
+$('exp').onclick=()=>dl('my-signs.json',JSON.stringify(custom),'application/json');
+$('imp').onclick=()=>$('file').click();
+$('file').onchange=async e=>{try{const a=JSON.parse(await e.target.files[0].text());a.forEach(n=>{if(!custom.some(c=>c.id===n.id))custom.push(n)});persist();draw()}catch{alert('Invalid file')}};
+// install
+let ip;addEventListener('beforeinstallprompt',e=>{e.preventDefault();ip=e;$('inst').hidden=false});
+$('inst').onclick=async()=>{ip.prompt();await ip.userChoice;$('inst').hidden=true};
+try{navigator.serviceWorker?.register('sw.js')}catch{}
+// features
+const d2=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+const fing=l=>{const w=l[0];return[d2(l[4],l[17])>d2(l[3],l[17]),d2(l[8],w)>d2(l[6],w),d2(l[12],w)>d2(l[10],w),d2(l[16],w)>d2(l[14],w),d2(l[20],w)>d2(l[18],w)]};
+function rule(l){const f=fing(l);
+ if(d2(l[4],l[8])<0.06&&f[2]&&f[3]&&f[4])return'OK';if(f[0]&&f[4]&&!f[1]&&!f[2]&&!f[3])return'Call';
+ if(!f[0]&&f[1]&&f[2]&&f[3]&&!f[4])return'Three';return null}
+const hvec=l=>{const w=l[0],s=d2(l[9],w)||1,v=[];for(const p of l)v.push((p.x-w.x)/s,(p.y-w.y)/s,(p.z-w.z)/s);return v};
+function match(vec,type,th){let best=null,bd=1e9;for(const c of custom){if(c.type!==type)continue;
+ for(const s of c.samples){let d=0;for(let i=0;i<vec.length;i++){const x=vec[i]-s[i];d+=x*x}d=Math.sqrt(d);if(d<bd){bd=d;best=c}}}
+ return best&&bd<th?'c_'+best.id:null}
+// hold to confirm
+let cand=null,since=0,last=null,lastT=0;
+function feed(key){const n=performance.now(),bar=$('bar').firstChild;if(key!==cand){cand=key;since=n;bar.style.width='0'}if(!key)return;
+ const p=Math.min(1,(n-since)/1000);bar.style.width=p*100+'%';
+ if(p>=1&&!(key===last&&n-lastT<3000)){const w=get(key)[lang];add(w);if($('auto').checked)say(w);last=key;lastT=n;since=n}}
+// teach
+$('rec').onclick=async()=>{const type=$('ty').value,e=$('we').value.trim();
+ if(!running)return $('tst').textContent='⚠ Start camera first.';if(!e)return $('tst').textContent='⚠ Enter English word.';
+ for(let i=3;i>0;i--){$('tst').textContent='Get ready... '+i;await sleep(1000)}
+ $('tst').textContent='⏺ Recording... hold the '+(type==='hand'?'sign':'expression');
+ const s=[],end=performance.now()+2500;
+ while(performance.now()<end){const v=type==='hand'?cur.hand:cur.face;if(v)s.push(v.map(x=>+x.toFixed(3)));await sleep(60)}
+ if(s.length<10)return $('tst').textContent='❌ '+(type==='hand'?'Hand':'Face')+' not seen clearly. Try again with better light.';
+ let c=custom.find(z=>z.e.toLowerCase()===e.toLowerCase()&&z.type===type);
+ if(c)c.samples.push(...s);else custom.push({id:Date.now(),type,e,t:$('wt').value.trim()||e,i:$('em').value.trim()||(type==='hand'?'🖐️':'🙂'),samples:s});
+ persist();draw();$('tst').textContent=`✅ Saved "${e}" (${s.length} samples). Record again from another angle to improve.`};
+// camera + models
+let stream,gr,fl;
+async function cam(){stream?.getTracks().forEach(t=>t.stop());stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:facing,width:640,height:480}});$('v').srcObject=stream;await $('v').play()}
+$('flip').onclick=async()=>{facing=facing==='user'?'environment':'user';if(running)await cam()};
+$('start').onclick=async()=>{$('start').disabled=true;$('status').textContent='Loading models...';
+ try{const fs=await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"),B="https://storage.googleapis.com/mediapipe-models/";
+ gr=await GestureRecognizer.createFromOptions(fs,{baseOptions:{modelAssetPath:B+"gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",delegate:"GPU"},runningMode:"VIDEO",numHands:1});
+ fl=await FaceLandmarker.createFromOptions(fs,{baseOptions:{modelAssetPath:B+"face_landmarker/face_landmarker/float16/1/face_landmarker.task",delegate:"GPU"},runningMode:"VIDEO",outputFaceBlendshapes:true,numFaces:1});
+ await cam();}catch(err){$('status').textContent='❌ '+err.message;$('start').disabled=false;return}
+ running=true;$('status').textContent='✅ Running';
+ const v=$('v'),c=$('c'),ctx=c.getContext('2d'),du=new DrawingUtils(ctx);let lv=-1;
+ const loop=()=>{if(v.currentTime!==lv){lv=v.currentTime;c.width=v.videoWidth;c.height=v.videoHeight;ctx.clearRect(0,0,c.width,c.height);
+  const ts=performance.now(),sens=+$('sens').value;let key=null;cur={hand:null,face:null};
+  const h=gr.recognizeForVideo(v,ts);
+  if(h.landmarks.length){const l=h.landmarks[0];du.drawConnectors(l,GestureRecognizer.HAND_CONNECTIONS,{color:'#68ebff',lineWidth:3});du.drawLandmarks(l,{color:'#ffffff',radius:3});
+   cur.hand=hvec(l);key=match(cur.hand,'hand',sens);
+   if(!key){const g=h.gestures[0]?.[0];key=(g&&g.categoryName!=='None'&&g.score>0.6&&SIGNS[g.categoryName])?g.categoryName:rule(l)}}
+  if($('face').checked||$('ty').value==='face'){const f=fl.detectForVideo(v,ts);
+   if(f.faceLandmarks.length){du.drawConnectors(f.faceLandmarks[0],FaceLandmarker.FACE_LANDMARKS_CONTOURS,{color:'#c55fff',lineWidth:1});
+    const cats=f.faceBlendshapes[0].categories;cur.face=cats.map(x=>x.score);
+    if(!key&&$('face').checked){key=match(cur.face,'face',sens*0.5);
+     if(!key){const b={};cats.forEach(x=>b[x.categoryName]=x.score);
+      if((b.mouthSmileLeft+b.mouthSmileRight)/2>0.6)key='Smile';else if(b.jawOpen>0.5&&b.browInnerUp>0.4)key='Surprised';
+      else if((b.eyeBlinkLeft+b.eyeBlinkRight)/2>0.7)key='Sleepy'}}}}
+  const s=key&&get(key);$('now').textContent=s?s.i+' '+s[lang]:'';feed(key);
+  document.querySelectorAll('.sg.done').forEach(x=>x.classList.remove('done'));if(key)$('g_'+key)?.classList.add('done')}
+  requestAnimationFrame(loop)};loop()};
+</script></body></html>

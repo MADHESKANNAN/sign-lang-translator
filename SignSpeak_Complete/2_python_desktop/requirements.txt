@@ -1,0 +1,10 @@
+numpy<2
+opencv-python
+mediapipe==0.10.14
+customtkinter
+pillow
+pyttsx3
+gTTS
+pygame
+SpeechRecognition
+PyAudio

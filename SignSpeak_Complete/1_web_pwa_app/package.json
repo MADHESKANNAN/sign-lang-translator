@@ -1,0 +1,3 @@
+{"name":"signspeak","version":"1.0.0","description":"SignSpeak sign translator","main":"main.js","scripts":{"start":"electron .","build":"electron-builder --win"},
+"devDependencies":{"electron":"^31.0.0","electron-builder":"^24.13.3"},
+"build":{"appId":"com.madhe.signspeak","productName":"SignSpeak","files":["index.html","main.js","manifest.webmanifest","icon-512.png","icon-192.png"],"win":{"target":"nsis","icon":"icon-512.png"}}}
